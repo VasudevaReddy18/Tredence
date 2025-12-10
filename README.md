@@ -1,4 +1,4 @@
-# Minimal Workflow Engine — Internship Assignment
+# Minimal Workflow Engine — Tredence Assignment
 
 This repository contains a minimal workflow/agent engine built with Python + FastAPI.  
 It implements a simplified graph engine that supports:
