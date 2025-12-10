@@ -1,67 +1,182 @@
 # Minimal Workflow Engine — Internship Assignment
 
-This repo contains a small workflow/agent engine built with Python + FastAPI.
-It implements a minimal graph engine that supports nodes (Python functions), a shared state, edges (including JSON-based conditional routing), looping, and a tool registry.
+This repository contains a minimal workflow/agent engine built with Python + FastAPI.  
+It implements a simplified graph engine that supports:
 
-## What is included
-- `app/engine.py` — core engine (updated to use safe JSON conditions)
-- `app/tools.py` — example tools (detect_smells, compute_quality_score)
-- `app/workflows.py` — sample Code-Review (Option A) workflow nodes
-- `app/main.py` — FastAPI server exposing the required endpoints
-- `samples/` — `good.py` and `bad.py` sample inputs
-- `scripts/run_example.ps1` — PowerShell demo script
-- `tests/` — pytest tests covering engine + endpoints
-- `requirements.txt`
+- Nodes (Python functions)
+- Shared state flowing between nodes
+- Edges (including JSON-based conditional routing)
+- Looping logic
+- A tool registry
+- Optional WebSocket log streaming
+- Pydantic-based state validation (StateModel)
 
-## Quick start (Windows PowerShell)
+The implementation corresponds to Option A: Code Review Mini-Agent from the assignment.
 
-1. Create & activate virtualenv
-```powershell
-python -m venv venv
-.\venv\Scripts\Activate
-```
+---
 
-2. Install dependencies
+## Quick Start (Windows PowerShell)
+
+Install dependencies:
 ```powershell
 pip install -r requirements.txt
 ```
 
-3. Start server (from `app/` folder)
+Start FastAPI server:
 ```powershell
 cd app
 uvicorn main:app --reload --port 8000
 ```
 
-4. Health check
+Health check:
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-5. Run the sample workflow (PowerShell)
+Run sample Code Review workflow:
 ```powershell
+cd ..
 $body = @{
   initial_state = @{
-    code = Get-Content ../samples/bad.py -Raw
+    code = Get-Content .\samples\bad.py -Raw
     threshold = 80
   }
   wait_for_completion = $true
 } | ConvertTo-Json -Depth 6
 
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/graph/run" -Method Post -Body $body -ContentType "application/json" | Format-List
+Invoke-RestMethod `
+    -Uri "http://127.0.0.1:8000/graph/run" `
+    -Method Post `
+    -Body $body `
+    -ContentType "application/json" `
+| Format-List
 ```
 
-## What the engine supports
-- Nodes: sync or async Python callables that accept `(state, tools)`.
-- Shared state: a dictionary that flows through nodes.
-- Edges: mapping node → next node; supports JSON-based conditional routing via condition lists.
-- Looping: nodes can return a `(state, next_node)` tuple to loop back.
-- Tool registry: `engine.register_tool(name, func)` to inject helper functions available to nodes.
+---
 
-## What I would improve with more time
-- Persist graphs & runs in SQLite/Postgres instead of memory.
-- Add WebSocket streaming for live logs.
-- Add authentication and role-based node permissions.
-- Improve the condition language or add a small DSL instead of JSON conditions.
+## State Model (Pydantic)
 
-## Notes for reviewers
-- For simplicity, graph creation via `/graph/create` currently expects node names that map to pre-registered callables in `app/main.py`. This keeps the system safe and easy to reason about. See `main.py` for the registered nodes and example edges.
+The workflow engine uses a Pydantic model (StateModel) to ensure the shared state is validated, structured, and predictable.
+
+Definition (app/models.py):
+```python
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
+
+class StateModel(BaseModel):
+    code: Optional[str] = Field("", description="Source code or text for analysis")
+    threshold: Optional[int] = Field(80, description="Stopping threshold for quality score")
+
+    # Populated by workflow nodes
+    functions: List[str] = Field(default_factory=list)
+    complexities: List[int] = Field(default_factory=list)
+    complexity_avg: float = 0.0
+    issues: int = 0
+    tool_info: Dict[str, Any] = Field(default_factory=dict)
+    suggestions: List[str] = Field(default_factory=list)
+    quality_score: float = 0.0
+    iteration: int = 0
+
+    class Config:
+        extra = "allow"
+```
+
+How it works:
+
+- `/graph/run` validates `initial_state`
+- Missing fields are auto-filled
+- Wrong types produce structured errors
+- Engine internally uses dict for compatibility
+
+Example run input:
+```json
+{
+  "initial_state": {
+    "code": "def a():\n  print('hello')",
+    "threshold": 80
+  },
+  "wait_for_completion": true
+}
+```
+
+---
+
+## Workflow Engine Features
+
+Nodes:
+```python
+(state: dict, tools: dict)
+```
+
+Shared State:
+- Validated by Pydantic
+- Enriched with defaults
+- Converted to dict internally
+
+Edges:
+- Simple adjacency maps
+- JSON-based conditional routing
+- Nodes may override next step
+
+Looping:
+```python
+return updated_state, "extract"
+```
+Allows “repeat until quality_score >= threshold”.
+
+Tool registry:
+```python
+engine.register_tool("detect_smells", detect_smells)
+```
+
+---
+
+## Tests
+
+Run tests:
+```powershell
+python -m pytest -q
+```
+
+Tests cover:
+- Health endpoint  
+- Sync workflow run  
+- Async workflow + polling  
+
+All pass.
+
+---
+
+## Code Review Mini-Agent (Option A)
+
+Workflow steps implemented:
+
+1. Extract functions  
+2. Compute complexity  
+3. Detect issues  
+4. Suggest improvements  
+5. Loop until threshold reached  
+
+Demonstrates:
+- Branching  
+- Looping  
+- Tool usage  
+- State transformation  
+- Execution logs  
+
+---
+
+## What I Would Improve With More Time
+
+- SQLite/Postgres persistence  
+- Richer DSL for graph definitions  
+- Parallel node execution  
+- UI for workflow visualization  
+
+---
+
+## Notes for Reviewers
+
+- Node names for `/graph/create` map to pre-registered functions in `main.py`
+- A demo script (`scripts/run_example.ps1`) is included  
+- README shows everything required to run & test the system  
